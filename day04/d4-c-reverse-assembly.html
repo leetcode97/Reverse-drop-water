@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>D4 · C 反汇编对照笔记 — 局部/全局变量 + 数组 + 指针</title>
+<style>
+  :root{
+    --bg:#0E1116; --panel:#161B22; --panel2:#1C2129; --border:#262D36;
+    --text:#E6EDF3; --sub:#8B949E; --dim:#6E7681;
+    --green:#3FB950; --blue:#58A6FF; --yellow:#D29922; --red:#F85149; --purple:#BC8CFF;
+    --mono:Consolas,"Cascadia Mono","JetBrains Mono",ui-monospace,monospace;
+    --sans:"Segoe UI","Microsoft YaHei",system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.7;font-size:15px}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 20px 80px}
+  a{color:var(--blue);text-decoration:none}
+  /* ===== Hero ===== */
+  .hero{border:1px solid var(--border);border-radius:14px;background:linear-gradient(135deg,#161B22 0%,#10151C 100%);padding:34px 34px 28px;position:relative;overflow:hidden}
+  .hero::after{content:"";position:absolute;right:-60px;top:-60px;width:240px;height:240px;border-radius:50%;background:radial-gradient(circle,rgba(63,185,80,.12),transparent 70%);pointer-events:none}
+  .hero .kicker{font-family:var(--mono);font-size:12px;color:var(--green);letter-spacing:.12em}
+  .hero h1{font-size:26px;font-weight:700;margin:6px 0 8px;letter-spacing:.01em}
+  .hero p.desc{color:var(--sub);font-size:14px;max-width:640px}
+  .envbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+  .env{font-family:var(--mono);font-size:12px;color:var(--sub);border:1px solid var(--border);background:var(--panel);border-radius:6px;padding:3px 10px}
+  .env b{color:var(--yellow);font-weight:600}
+  .filecards{display:flex;flex-wrap:wrap;gap:12px;margin-top:20px}
+  .fcard{flex:1 1 200px;min-width:0;border:1px solid var(--border);border-radius:10px;background:var(--panel);padding:12px 14px}
+  .fcard .fn{font-family:var(--mono);font-size:13px;color:var(--blue);font-weight:600}
+  .fcard .fd{font-size:12px;color:var(--dim);margin-top:2px}
+  .fcard .tag{display:inline-block;margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--green);border:1px solid rgba(63,185,80,.35);border-radius:4px;padding:1px 8px;background:rgba(63,185,80,.08)}
+  /* ===== 模块 ===== */
+  section{margin-top:44px}
+  .sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:10px}
+  .sec-num{font-family:var(--mono);font-size:13px;color:var(--green);font-weight:700}
+  .sec-title{font-size:19px;font-weight:700}
+  .sec-sub{font-size:12.5px;color:var(--dim);margin-left:auto;text-align:right;font-family:var(--mono)}
+  .card{border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:20px 22px;margin-top:16px}
+  .card h4{font-size:15px;font-weight:600;margin-bottom:10px;color:var(--text)}
+  /* ===== 代码 ===== */
+  pre.code{font-family:var(--mono);font-size:12.8px;line-height:1.65;background:#0B0E13;border:1px solid var(--border);border-radius:8px;padding:14px 16px;overflow-x:auto;white-space:pre}
+  pre.code .c{color:#7D8590}      /* 注释 */
+  pre.code .k{color:var(--purple)}  /* 关键字 */
+  pre.code .n{color:var(--blue)}    /* 数字 */
+  pre.code .s{color:var(--green)}   /* 字符串 */
+  pre.code .hl{background:rgba(248,81,73,.14);outline:1px solid rgba(248,81,73,.35);border-radius:3px}
+  pre.code .ad{color:var(--yellow)} /* 地址 */
+  pre.code .reg{color:var(--blue)}
+  pre.code .ins{color:var(--green)}
+  .codegrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+  @media(max-width:760px){.codegrid{grid-template-columns:1fr}}
+  .col-label{font-family:var(--mono);font-size:11.5px;color:var(--dim);margin-bottom:6px;display:flex;align-items:center;gap:8px}
+  .col-label .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .arrow-line{text-align:center;font-family:var(--mono);color:var(--dim);font-size:12px;margin:4px 0}
+  /* ===== 图解 ===== */
+  .fig{border:1px solid var(--border);border-radius:10px;background:var(--panel2);padding:18px;margin-top:14px;overflow-x:auto}
+  .fig-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+  .fig-title .fi{font-family:var(--mono);font-size:11px;color:var(--yellow)}
+  .memrow{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch}
+  .membox{border:1px solid var(--border);border-radius:8px;min-width:150px;flex:1 1 150px}
+  .membox .mhead{font-family:var(--mono);font-size:11px;color:var(--sub);border-bottom:1px solid var(--border);padding:4px 10px;background:rgba(88,166,255,.06);border-radius:8px 8px 0 0}
+  .membox .mbody{padding:8px 10px;font-size:12.5px}
+  .membox .mbody .row{display:flex;justify-content:space-between;gap:10px;padding:2px 0;font-family:var(--mono);font-size:12px}
+  .membox .mbody .row .off{color:var(--dim)}
+  .stack{display:flex;flex-direction:column;gap:1px}
+  .stack .srow{display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-family:var(--mono);font-size:12px;background:var(--panel)}
+  .stack .srow .addr{color:var(--dim);width:76px;flex:none}
+  .stack .srow .name{color:var(--green);width:130px;flex:none}
+  .stack .srow .val{color:var(--blue)}
+  .stack .srow.hl-arr{border-color:rgba(210,153,34,.6);background:rgba(210,153,34,.07)}
+  .stack .srow.hl-var{border-color:rgba(63,185,80,.6);background:rgba(63,185,80,.07)}
+  .stack .srow.hl-ptr{border-color:rgba(188,140,255,.6);background:rgba(188,140,255,.07)}
+  .stack .srow.hl-arg{border-color:rgba(88,166,255,.6);background:rgba(88,166,255,.07)}
+  .stack .srow .arrow{color:var(--dim);font-size:10px;margin-left:auto}
+  .stack .srow.hl-arg .arrow{color:var(--blue)}
+  .stack-label{font-family:var(--mono);font-size:10.5px;color:var(--dim);margin:6px 0 2px 4px}
+  .stack-label b{color:var(--sub);font-weight:600}
+  /* 指针关系图 */
+  .ptrmap{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:center}
+  .ptrbox{border:1px solid var(--border);border-radius:8px;background:var(--panel);text-align:center;padding:12px 16px;font-family:var(--mono);font-size:12px;position:relative}
+  .ptrbox .pname{color:var(--sub);font-size:11px;margin-bottom:4px}
+  .ptrbox .pval{color:var(--blue);font-weight:600}
+  .ptrbox .pval.addr{color:var(--yellow)}
+  .ptrarrow{color:var(--dim);font-size:20px;font-family:var(--mono)}
+  .note{border-left:3px solid var(--yellow);background:rgba(210,153,34,.07);border-radius:0 8px 8px 0;padding:10px 14px;font-size:13px;color:var(--sub);margin-top:14px}
+  .note b{color:var(--yellow);font-weight:600}
+  .note.green{border-color:var(--green);background:rgba(63,185,80,.06)}
+  .note.green b{color:var(--green)}
+  .note.blue{border-color:var(--blue);background:rgba(88,166,255,.06)}
+  .note.blue b{color:var(--blue)}
+  .note.red{border-color:var(--red);background:rgba(248,81,73,.06)}
+  .note.red b{color:var(--red)}
+  /* ===== 表格 ===== */
+  .tablewrap{overflow-x:auto;margin-top:14px;border:1px solid var(--border);border-radius:10px}
+  table{border-collapse:collapse;width:100%;font-size:13px;min-width:640px}
+  th{font-family:var(--mono);font-size:12px;color:var(--green);text-align:left;padding:10px 12px;background:var(--panel2);border-bottom:1px solid var(--border);white-space:nowrap}
+  td{padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--text)}
+  tr:last-child td{border-bottom:none}
+  td code,th code{font-family:var(--mono);font-size:12px;color:var(--yellow);background:rgba(210,153,34,.08);border-radius:4px;padding:0 5px;white-space:nowrap}
+  td .mono{font-family:var(--mono);font-size:12px;color:var(--blue)}
+  /* ===== details ===== */
+  details{border:1px solid var(--border);border-radius:10px;background:var(--panel);margin-top:16px}
+  summary{cursor:pointer;padding:12px 18px;font-size:14px;font-weight:600;color:var(--text);list-style:none;display:flex;align-items:center;gap:10px}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"+";font-family:var(--mono);color:var(--green);font-size:16px;width:18px;text-align:center}
+  details[open] summary::before{content:"–"}
+  details .dbody{padding:0 18px 18px}
+  .kpis{display:flex;flex-wrap:wrap;gap:12px;margin-top:14px}
+  .kpi{flex:1 1 210px;min-width:0;border:1px solid var(--border);border-radius:10px;background:var(--panel);padding:14px 16px}
+  .kpi .kt{font-family:var(--mono);font-size:11.5px;color:var(--green);margin-bottom:6px}
+  .kpi .kv{font-size:14px;font-weight:600;line-height:1.5}
+  .kpi .kv .mono{font-family:var(--mono);color:var(--yellow);font-size:13px}
+  .footer{margin-top:52px;border-top:1px solid var(--border);padding-top:16px;font-size:12px;color:var(--dim);display:flex;flex-wrap:wrap;gap:8px 20px;justify-content:space-between}
+  .quiz{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+  .quiz .q{font-size:13.5px}
+  .quiz .q .qa{color:var(--dim)}
+  .quiz .q b{color:var(--text)}
+  .quiz details{background:var(--panel2);border-radius:8px;margin-top:2px}
+  .quiz summary{font-size:12.5px;padding:8px 12px;color:var(--blue)}
+  .quiz details .dbody{padding:8px 12px;font-size:12.5px;color:var(--sub)}
+  .quiz details .dbody code{font-family:var(--mono);color:var(--yellow);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <div class="hero">
+    <div class="kicker">D4 · C REVERSE ENGINEERING</div>
+    <h1>C 反汇编对照：局部/全局变量 · 数组 · 指针</h1>
+    <p class="desc">三个最小 C 程序，编译成 32 位（i386），反汇编后逐行对照。理解"源代码里的一个变量/数组/指针，在机器码层面到底是什么"，是逆向看代码的核心手艺。</p>
+    <div class="envbar">
+      <span class="env">GCC <b>16.2.0</b></span>
+      <span class="env">参数 <b>-m32 -O0</b></span>
+      <span class="env">输出 <b>i386 PE / COFF</b></span>
+      <span class="env">反汇编 <b>objdump -M intel</b></span>
+      <span class="env">已运行验证 <b>64位版退出码 150 / 101 / 2</b></span>
+    </div>
+    <div class="filecards">
+      <div class="fcard"><div class="fn">d1_vars.c/.exe</div><div class="fd">局部 vs 全局 int 变量</div><span class="tag">D4-1</span></div>
+      <div class="fcard"><div class="fn">d2_array.c/.exe</div><div class="fd">数组的栈布局与下标寻址</div><span class="tag">D4-2</span></div>
+      <div class="fcard"><div class="fn">d3_ptr.c/.exe</div><div class="fd">指针传参、取址与解引用</div><span class="tag">D4-3</span></div>
+    </div>
+  </div>
+
+  <!-- ===================== 0 总览 ===================== -->
+  <section id="overview">
+    <div class="sec-head">
+      <span class="sec-num">00</span>
+      <span class="sec-title">总览：四种结构在 32 位下的本质</span>
+      <span class="sec-sub">先记结论，再往下看证据</span>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="kt">全局变量</div><div class="kv">躺在 <span class="mono">.data</span> 段固定地址，汇编 <span class="mono">mov [0x402000]</span> 直接访存，程序全程有效</div></div>
+      <div class="kpi"><div class="kt">局部变量</div><div class="kv">活在栈上 <span class="mono">[ebp-4]</span>，随函数进出而分配/销毁，汇编用 ebp 负偏移访问</div></div>
+      <div class="kpi"><div class="kt">数组</div><div class="kv">栈上连续内存，下标即 <span class="mono">基址 + i×4</span>，汇编出现 <span class="mono">[ebp+eax*4-0x18]</span> 比例变址</div></div>
+      <div class="kpi"><div class="kt">指针</div><div class="kv">存"地址"的变量。传参传地址（<span class="mono">lea</span>），解引用是"取地址再访存"两跳</div></div>
+    </div>
+
+    <div class="fig">
+      <div class="fig-title"><span class="fi">FIG.0</span> 内存地图：全局变量 / 局部变量 / 指针变量住在哪</div>
+      <div class="memrow">
+        <div class="membox">
+          <div class="mhead">.data 段（程序镜像内，地址固定）</div>
+          <div class="mbody">
+            <div class="row"><span class="off">0x402000</span><span>g_counter = 100</span></div>
+            <div class="row"><span class="off">0x402004</span><span>g_hidden = 7</span></div>
+          </div>
+        </div>
+        <div class="membox" style="flex:1.6 1 220px">
+          <div class="mhead">运行时栈（esp → ebp 向下增长，函数帧内）</div>
+          <div class="mbody" style="padding:6px 10px">
+            <div class="stack">
+              <div class="srow"><span class="addr">[ebp+0xC]</span><span class="name">arg2</span><span class="val">(调用者压入)</span><span class="arrow">← 调用者写</span></div>
+              <div class="srow hl-arg"><span class="addr">[ebp+0x8]</span><span class="name">arg1</span><span class="val">(调用者压入)</span><span class="arrow">← 参数</span></div>
+              <div class="srow"><span class="addr">[ebp+0x4]</span><span class="name">返回地址</span><span class="val">(call 压入)</span></div>
+              <div class="srow"><span class="addr">[ebp+0x0]</span><span class="name">旧 ebp</span><span class="val">(push ebp)</span></div>
+              <div class="srow hl-var"><span class="addr">[ebp-0x4]</span><span class="name">局部变量</span><span class="val">int local = 42</span></div>
+              <div class="srow hl-arr"><span class="addr">[ebp-0x8]</span><span class="name">变量 i / s</span><span class="val">(数组示例)</span></div>
+              <div class="srow hl-arr"><span class="addr">[ebp-0x18]</span><span class="name">arr[0] … arr[3]</span><span class="val">连续 16 字节</span></div>
+              <div class="srow hl-ptr"><span class="addr">[ebp-0x4]</span><span class="name">指针变量 p</span><span class="val">里面存"别人"的地址</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note"><b>一句话规律：</b>ebp 往上是"别人的地盘"（参数、返回地址），ebp 往下是本函数的局部区。全局变量根本不在这条栈上，它有自己独立的固定地址。</div>
+    </div>
+  </section>
+
+  <!-- ===================== D1 ===================== -->
+  <section id="d1">
+    <div class="sec-head">
+      <span class="sec-num">01</span>
+      <span class="sec-title">D4-1 局部变量 vs 全局变量</span>
+      <span class="sec-sub">d1_vars.c → d1_vars.exe @ 0x401000</span>
+    </div>
+
+    <div class="card">
+      <h4>程序（节选）</h4>
+      <pre class="code"><span class="c">/* 已初始化全局 → .data 段，地址固定 */</span>
+<span class="k">int</span> g_counter = <span class="n">100</span>;
+
+<span class="k">int</span> <span class="n">add_global</span>(<span class="k">int</span> delta) {
+    g_counter += delta;   <span class="c">// 直接读写 [0x402000]</span>
+    <span class="k">return</span> g_counter;
+}
+
+<span class="k">int</span> <span class="n">add_local</span>(<span class="k">int</span> delta) {
+    <span class="k">int</span> local = <span class="n">42</span>;      <span class="c">// 局部变量 → 栈 [ebp-4]</span>
+    local += delta;
+    <span class="k">return</span> local;
+}</pre>
+    </div>
+
+    <div class="codegrid">
+      <div>
+        <div class="col-label"><span class="dot" style="background:var(--green)"></span>32 位反汇编（Intel 语法）</div>
+        <pre class="code"><span class="ad">00401000</span> &lt;_add_global&gt;:
+  push  ebp
+  mov   ebp, esp
+<span class="hl">  mov   edx, DWORD PTR ds:<span class="ad">0x402000</span></span>   <span class="c">; 读全局：固定地址直访</span>
+  mov   eax, DWORD PTR [ebp+<span class="n">0x8</span>]    <span class="c">; 参数 delta 从栈取</span>
+  add   eax, edx
+<span class="hl">  mov   ds:<span class="ad">0x402000</span>, eax</span>            <span class="c">; 写回全局</span>
+  mov   eax, ds:<span class="ad">0x402000</span>
+  pop   ebp
+  ret
+
+<span class="ad">0040101a</span> &lt;_add_local&gt;:
+  push  ebp
+  mov   ebp, esp
+<span class="hl">  sub   esp, <span class="n">0x4</span></span>                     <span class="c">; 给局部变量腾 4 字节</span>
+<span class="hl">  mov   DWORD PTR [ebp-<span class="n">0x4</span>], <span class="n">0x2a</span></span>   <span class="c">; local = 42 (0x2a)</span>
+  mov   eax, DWORD PTR [ebp+<span class="n">0x8</span>]
+<span class="hl">  add   DWORD PTR [ebp-<span class="n">0x4</span>], eax</span>      <span class="c">; local += delta</span>
+  mov   eax, DWORD PTR [ebp-<span class="n">0x4</span>]
+  leave
+  ret</pre>
+      </div>
+      <div>
+        <div class="col-label"><span class="dot" style="background:var(--yellow)"></span>怎么看这段汇编</div>
+        <div class="fig" style="margin-top:0">
+          <div class="fig-title"><span class="fi">FIG.1</span> 全局 vs 局部：两种完全不同的地址来源</div>
+          <div class="stack">
+            <div class="stack-label"><b>.data 段</b>（镜像内固定地址，装载时确定）</div>
+            <div class="srow"><span class="addr">0x402000</span><span class="name">g_counter</span><span class="val">100</span><span class="arrow">← mov ds:0x402000 直达</span></div>
+            <div class="srow"><span class="addr">0x402004</span><span class="name">g_hidden</span><span class="val">7</span></div>
+            <div class="stack-label" style="margin-top:10px"><b>add_local 栈帧</b>（运行时才有）</div>
+            <div class="srow"><span class="addr">[ebp+0x8]</span><span class="name">delta</span><span class="val">(参数)</span><span class="arrow">← 调用者 push</span></div>
+            <div class="srow"><span class="addr">[ebp+0x4]</span><span class="name">返回地址</span></div>
+            <div class="srow"><span class="addr">[ebp+0x0]</span><span class="name">旧 ebp</span></div>
+            <div class="srow hl-var"><span class="addr">[ebp-0x4]</span><span class="name">local</span><span class="val">42 → 45</span><span class="arrow">← 本函数私有</span></div>
+          </div>
+        </div>
+        <div class="note blue"><b>参数为何在 [ebp+0x8]？</b>call 前调用者把 delta 压栈（这里是 <span style="font-family:var(--mono)">mov [esp],0x5</span>），call 压入返回地址，push ebp 后再设 ebp。于是 ebp+8 恰好是第一个参数，ebp+4 是返回地址。这是 x86 32 位函数调用的通用契约。</div>
+      </div>
+    </div>
+
+    <div class="note green"><b>逆向识别点：</b>看到 <span style="font-family:var(--mono)">mov reg, ds:[固定地址]</span> 且地址在镜像内（如 0x400000~0x500000 之间）→ 这是全局/静态变量；看到 <span style="font-family:var(--mono)">[ebp-0xN]</span> 负偏移 → 局部变量；<span style="font-family:var(--mono)">[ebp+0xN]</span> 正偏移 → 参数。目标文件里全局地址写作 <span style="font-family:var(--mono)">ds:0x0</span> + <span style="font-family:var(--mono)">dir32 .data</span> 重定位，链接时才填成 0x402000。</div>
+  </section>
+
+  <!-- ===================== D2 ===================== -->
+  <section id="d2">
+    <div class="sec-head">
+      <span class="sec-num">02</span>
+      <span class="sec-title">D4-2 数组：栈上连续内存 + 下标寻址</span>
+      <span class="sec-sub">d2_array.c → d2_array.exe @ 0x401000</span>
+    </div>
+
+    <div class="card">
+      <h4>程序（节选）</h4>
+      <pre class="code"><span class="k">int</span> <span class="n">sum_array</span>(<span class="k">int</span> n) {
+    <span class="k">int</span> arr[<span class="n">4</span>] = {<span class="n">10</span>, <span class="n">20</span>, <span class="n">30</span>, <span class="n">40</span>};  <span class="c">// 栈上 4×4 = 16 字节</span>
+    <span class="k">int</span> s = <span class="n">0</span>, i;
+    <span class="k">for</span> (i = <span class="n">0</span>; i &lt; <span class="n">4</span>; i++)
+        s += arr[i];              <span class="c">// 下标 → 基址 + i×4</span>
+    <span class="k">return</span> s + n;
+}</pre>
+    </div>
+
+    <div class="codegrid">
+      <div>
+        <div class="col-label"><span class="dot" style="background:var(--green)"></span>32 位反汇编（节选）</div>
+        <pre class="code"><span class="ad">00401000</span> &lt;_sum_array&gt;:
+  push  ebp
+  mov   ebp, esp
+<span class="hl">  sub   esp, <span class="n">0x18</span></span>      <span class="c">; 24 字节：arr[16] + s + i</span>
+  <span class="c">;—— 数组初始化：逐元素写入栈 ——</span>
+<span class="hl">  mov   DWORD PTR [ebp-<span class="n">0x18</span>], <span class="n">0xa</span></span>   <span class="c">; arr[0] = 10</span>
+  mov   DWORD PTR [ebp-<span class="n">0x14</span>], <span class="n">0x14</span>   <span class="c">; arr[1] = 20</span>
+  mov   DWORD PTR [ebp-<span class="n">0x10</span>], <span class="n">0x1e</span>   <span class="c">; arr[2] = 30</span>
+  mov   DWORD PTR [ebp-<span class="n">0xc</span>], <span class="n">0x28</span>    <span class="c">; arr[3] = 40</span>
+  mov   DWORD PTR [ebp-<span class="n">0x4</span>], <span class="n">0x0</span>     <span class="c">; s = 0</span>
+  mov   DWORD PTR [ebp-<span class="n">0x8</span>], <span class="n">0x0</span>     <span class="c">; i = 0</span>
+  jmp   <span class="n">401040</span>
+<span class="ad">00401032</span> <span class="c">;—— 循环体 ——</span>
+  mov   eax, [ebp-<span class="n">0x8</span>]             <span class="c">; eax = i</span>
+<span class="hl">  mov   eax, [ebp+eax*<span class="n">4</span>-<span class="n">0x18</span>]</span>      <span class="c">; eax = arr[i] ★关键寻址</span>
+<span class="hl">  add   [ebp-<span class="n">0x4</span>], eax</span>              <span class="c">; s += arr[i]</span>
+  add   [ebp-<span class="n">0x8</span>], <span class="n">0x1</span>             <span class="c">; i++</span>
+<span class="ad">00401040</span> <span class="c">;—— 循环条件 ——</span>
+  cmp   [ebp-<span class="n">0x8</span>], <span class="n">0x3</span>
+  jle   <span class="n">401032</span>                   <span class="c">; i &lt;= 3 则继续</span>
+  mov   edx, [ebp-<span class="n">0x4</span>]             <span class="c">; s</span>
+  mov   eax, [ebp+<span class="n">0x8</span>]             <span class="c">; n</span>
+  add   eax, edx
+  leave
+  ret</pre>
+      </div>
+      <div>
+        <div class="col-label"><span class="dot" style="background:var(--yellow)"></span>怎么看这段汇编</div>
+        <div class="fig" style="margin-top:0">
+          <div class="fig-title"><span class="fi">FIG.2</span> sum_array 栈帧与寻址公式</div>
+          <div class="stack">
+            <div class="srow"><span class="addr">[ebp+0x8]</span><span class="name">n</span><span class="val">(参数)</span></div>
+            <div class="srow"><span class="addr">[ebp+0x4]</span><span class="name">返回地址</span></div>
+            <div class="srow"><span class="addr">[ebp+0x0]</span><span class="name">旧 ebp</span></div>
+            <div class="srow hl-var"><span class="addr">[ebp-0x4]</span><span class="name">s</span><span class="val">累加器</span></div>
+            <div class="srow hl-var"><span class="addr">[ebp-0x8]</span><span class="name">i</span><span class="val">循环变量</span></div>
+            <div class="srow hl-arr"><span class="addr">[ebp-0xC]</span><span class="name">arr[3]</span><span class="val">40</span></div>
+            <div class="srow hl-arr"><span class="addr">[ebp-0x10]</span><span class="name">arr[2]</span><span class="val">30</span></div>
+            <div class="srow hl-arr"><span class="addr">[ebp-0x14]</span><span class="name">arr[1]</span><span class="val">20</span></div>
+            <div class="srow hl-arr"><span class="addr">[ebp-0x18]</span><span class="name">arr[0]</span><span class="val">10 ← 基址</span></div>
+          </div>
+          <div class="arrow-line">arr[i] 的机器码地址 = ebp − 0x18 + i × 4</div>
+          <pre class="code" style="margin:6px 0 0"><span class="ins">mov</span> <span class="reg">eax</span>, [<span class="reg">ebp</span> + <span class="reg">eax</span>*<span class="n">4</span> − <span class="n">0x18</span>]
+  └─基址─┘   └─变址─┘ └─偏移─┘</pre>
+        </div>
+        <div class="note blue"><b>两个细节：</b>① 编译器把 <span style="font-family:var(--mono)">i&lt;4</span> 优化成 <span style="font-family:var(--mono)">cmp i,3 / jle</span>，语义等价；② 数组下标不"乘 4"，而是直接进 <span style="font-family:var(--mono)">eax*4</span> 比例变址——硬件一次算完，这是识别数组访问的黄金标志。</div>
+      </div>
+    </div>
+
+    <div class="note green"><b>逆向识别点：</b>见到 <span style="font-family:var(--mono)">[ebp+reg*4-0xN]</span> 或 <span style="font-family:var(--mono)">[reg+reg*4]</span> 这类"寄存器×4 再加减常量"→ 几乎可以断定在访问 int 数组（char 数组是 ×1，short 是 ×2）。配合循环计数器和 <span style="font-family:var(--mono)">cmp/jle</span> 结构，还原一个数组遍历非常快。</div>
+  </section>
+
+  <!-- ===================== D3 ===================== -->
+  <section id="d3">
+    <div class="sec-head">
+      <span class="sec-num">03</span>
+      <span class="sec-title">D4-3 指针传参：取址、解引用、指针算术</span>
+      <span class="sec-sub">d3_ptr.c → d3_ptr.exe @ 0x401000</span>
+    </div>
+
+    <div class="card">
+      <h4>程序（节选）</h4>
+      <pre class="code"><span class="k">void</span> <span class="n">swap</span>(<span class="k">int</span> *a, <span class="k">int</span> *b) {
+    <span class="k">int</span> t = *a;    <span class="c">// 解引用读</span>
+    *a = *b;       <span class="c">// 解引用写</span>
+    *b = t;
+}
+<span class="k">int</span> <span class="n">main</span>(<span class="k">void</span>) {
+    <span class="k">int</span> x = <span class="n">3</span>, y = <span class="n">5</span>;
+    <span class="k">int</span> *p = &amp;x;   <span class="c">// 指针变量存 x 的地址</span>
+    swap(&amp;x, &amp;y);  <span class="c">// 传地址</span>
+    p = p + <span class="n">1</span>;    <span class="c">// 指针算术</span>
+    <span class="k">return</span> x - y;
+}</pre>
+    </div>
+
+    <div class="codegrid">
+      <div>
+        <div class="col-label"><span class="dot" style="background:var(--green)"></span>32 位反汇编（节选）</div>
+        <pre class="code"><span class="ad">00401000</span> &lt;_swap&gt;:
+  push  ebp
+  mov   ebp, esp
+  sub   esp, <span class="n">0x4</span>            <span class="c">; t 占 4 字节</span>
+  <span class="c">;—— t = *a：先取地址，再按地址取值 ——</span>
+<span class="hl">  mov   eax, [ebp+<span class="n">0x8</span>]</span>      <span class="c">; eax = a（a 里存的是地址）</span>
+<span class="hl">  mov   eax, [eax]</span>            <span class="c">; eax = *a（解引用）★两跳访存</span>
+  mov   [ebp-<span class="n">0x4</span>], eax       <span class="c">; t = eax</span>
+  <span class="c">;—— *a = *b ——</span>
+  mov   eax, [ebp+<span class="n">0xc</span>]        <span class="c">; eax = b</span>
+  mov   edx, [eax]              <span class="c">; edx = *b</span>
+  mov   eax, [ebp+<span class="n">0x8</span>]
+  mov   [eax], edx              <span class="c">; *a = edx</span>
+  <span class="c">;—— *b = t ——</span>
+  mov   eax, [ebp+<span class="n">0xc</span>]
+  mov   edx, [ebp-<span class="n">0x4</span>]
+  mov   [eax], edx              <span class="c">; *b = t</span>
+  leave
+  ret
+
+<span class="ad">00401023</span> &lt;_main&gt;:
+  sub   esp, <span class="n">0x14</span>            <span class="c">; x/y/p + 参数区</span>
+  mov   [ebp-<span class="n">0x8</span>], <span class="n">0x3</span>       <span class="c">; x = 3</span>
+  mov   [ebp-<span class="n">0xc</span>], <span class="n">0x5</span>       <span class="c">; y = 5</span>
+<span class="hl">  lea   eax, [ebp-<span class="n">0x8</span>]</span>       <span class="c">; eax = &amp;x ★取地址</span>
+  mov   [ebp-<span class="n">0x4</span>], eax       <span class="c">; p = &amp;x</span>
+<span class="hl">  lea   eax, [ebp-<span class="n">0xc</span>]</span>       <span class="c">; eax = &amp;y</span>
+  mov   [esp+<span class="n">0x4</span>], eax       <span class="c">; 参数2 = &amp;y</span>
+<span class="hl">  lea   eax, [ebp-<span class="n">0x8</span>]</span>       <span class="c">; eax = &amp;x</span>
+  mov   [esp], eax             <span class="c">; 参数1 = &amp;x</span>
+  call  <span class="n">_swap</span>
+<span class="hl">  add   [ebp-<span class="n">0x4</span>], <span class="n">0x4</span></span>        <span class="c">; p = p+1 → 实际 +4 字节！</span>
+  mov   edx, [ebp-<span class="n">0x8</span>]        <span class="c">; x（swap 后 = 5）</span>
+  mov   eax, [ebp-<span class="n">0xc</span>]        <span class="c">; y（swap 后 = 3）</span>
+  sub   edx, eax               <span class="c">; x - y = 2</span>
+  leave
+  ret</pre>
+      </div>
+      <div>
+        <div class="col-label"><span class="dot" style="background:var(--yellow)"></span>怎么看这段汇编</div>
+        <div class="fig" style="margin-top:0">
+          <div class="fig-title"><span class="fi">FIG.3</span> 指针的指向关系：变量里存的是"别人的地址"</div>
+          <div class="ptrmap">
+            <div class="ptrbox"><div class="pname">p（栈 [ebp-4]）</div><div class="pval addr">=&amp;x → 0x...</div></div>
+            <div class="ptrarrow">→</div>
+            <div class="ptrbox"><div class="pname">x（栈 [ebp-8]）</div><div class="pval">3 → 5（被 swap 改）</div></div>
+          </div>
+          <div class="arrow-line" style="margin:10px 0 4px">swap 的参数：</div>
+          <div class="ptrmap">
+            <div class="ptrbox"><div class="pname">参数 a [ebp+8]</div><div class="pval addr">存 &amp;x</div></div>
+            <div class="ptrbox"><div class="pname">参数 b [ebp+0xC]</div><div class="pval addr">存 &amp;y</div></div>
+            <div class="ptrbox"><div class="pname">*a / *b</div><div class="pval">两层访存改到 x / y 本体</div></div>
+          </div>
+        </div>
+        <div class="note blue"><b>lea vs mov：</b><span style="font-family:var(--mono)">lea eax,[ebp-8]</span> 把"地址值"放进 eax（不访存）；<span style="font-family:var(--mono)">mov eax,[eax]</span> 才按地址取值。见到 <span style="font-family:var(--mono)">lea reg,[ebp-0xN]</span> 后紧跟 <span style="font-family:var(--mono)">mov [esp],reg</span> → 就是在传地址，即 C 里的 <span style="font-family:var(--mono)">&amp;var</span>。</div>
+        <div class="note red"><b>指针 +1 不是地址 +1：</b><span style="font-family:var(--mono)">add [ebp-4], 0x4</span> —— 因为 p 是 int*，一个 int 占 4 字节，所以 p+1 在机器码里就是地址 +4。char* 的 +1 才是 +1。逆向还原时，看到指针加常量，要除以元素大小反推类型。</div>
+        <div class="note green"><b>逆向识别点：</b>swap 里 <span style="font-family:var(--mono)">mov eax,[ebp+8]</span> → <span style="font-family:var(--mono)">mov eax,[eax]</span> 的"取地址→再访存"两跳，就是 C 的 <span style="font-family:var(--mono)">*p</span>。值传递的函数绝不会出现这种双层访存。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 04 对比 ===================== -->
+  <section id="compare">
+    <div class="sec-head">
+      <span class="sec-num">04</span>
+      <span class="sec-title">横向对比：四种结构一张表</span>
+      <span class="sec-sub">同一维度看差异</span>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th>维度</th>
+            <th>全局 int</th>
+            <th>局部 int</th>
+            <th>数组 int[4]</th>
+            <th>指针参数 int*</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>存储位置</td>
+            <td><span class="mono">.data</span> 段固定地址<br>(0x402000)</td>
+            <td>栈 <span class="mono">[ebp-4]</span></td>
+            <td>栈连续 16 字节<br><span class="mono">[ebp-0x18]</span> 起</td>
+            <td>栈 <span class="mono">[ebp+8]</span><br>(里面存地址)</td>
+          </tr>
+          <tr>
+            <td>汇编访问</td>
+            <td><code>mov eax, ds:0x402000</code></td>
+            <td><code>mov [ebp-4], 0x2a</code></td>
+            <td><code>mov eax, [ebp+eax*4-0x18]</code></td>
+            <td><code>mov eax,[ebp+8]</code><br><code>mov eax,[eax]</code></td>
+          </tr>
+          <tr>
+            <td>寻址来源</td>
+            <td>绝对地址（链接期定）</td>
+            <td>ebp 负偏移（运行期定）</td>
+            <td>基址 + 变址×4</td>
+            <td>地址值先取回，再访存</td>
+          </tr>
+          <tr>
+            <td>生命周期</td>
+            <td>进程全程</td>
+            <td>函数调用期间</td>
+            <td>函数调用期间</td>
+            <td>调用期间（指向外部对象）</td>
+          </tr>
+          <tr>
+            <td>识别标志</td>
+            <td>固定地址 + 无栈帧</td>
+            <td>ebp 负偏移</td>
+            <td>比例变址 reg*4</td>
+            <td>lea 取址 / 双层访存</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note"><b>核心记忆：</b>寻址方式决定一切。逆向时先问三个问题——地址是固定的吗？（全局）是 ebp 附近的偏移吗？（局部）是"取个地址再访存"吗？（指针）——答案基本就出来了。</div>
+  </section>
+
+  <!-- ===================== 05 识别速查 ===================== -->
+  <section id="cheatsheet">
+    <div class="sec-head">
+      <span class="sec-num">05</span>
+      <span class="sec-title">逆向识别速查卡</span>
+      <span class="sec-sub">对着陌生二进制也能快速定位</span>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>看到的汇编形态</th><th>还原成 C</th><th>判断要点</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>mov reg, ds:[0x402000]</code></td><td>全局/静态变量</td><td>镜像内固定地址；不经过 ebp</td></tr>
+          <tr><td><code>mov [ebp-0x4], imm</code></td><td>局部变量</td><td>ebp 负偏移，函数帧私有</td></tr>
+          <tr><td><code>mov reg, [ebp+0x8]</code></td><td>函数参数</td><td>ebp 正偏移；第一个参数 +8</td></tr>
+          <tr><td><code>mov reg, [ebp+reg*4-0x18]</code></td><td>数组下标访问</td><td>×4 = int 数组；×1 = char，×2 = short</td></tr>
+          <tr><td><code>lea reg, [ebp-0x8]</code></td><td>&amp;x 取地址</td><td>lea 只算地址、不访存</td></tr>
+          <tr><td><code>mov reg,[reg]</code>（连续两条）</td><td>*p 解引用</td><td>先取地址值，再按地址取值</td></tr>
+          <tr><td><code>add [ebp-0x4], 0x4</code></td><td>int* 指针 +1</td><td>加的是 sizeof(int)=4，不是 1</td></tr>
+          <tr><td><code>mov [esp], imm / lea</code> + <code>call</code></td><td>传参（值/地址）</td><td>立即数=传值；lea 结果=传地址</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===================== 06 完整反汇编 ===================== -->
+  <section id="full">
+    <div class="sec-head">
+      <span class="sec-num">06</span>
+      <span class="sec-title">完整反汇编清单</span>
+      <span class="sec-sub">objdump -d -M intel 原始输出</span>
+    </div>
+    <div class="note blue"><b>文件对照：</b>三个 <span style="font-family:var(--mono)">.exe.asm</span> 是完整清单；<span style="font-family:var(--mono)">.o.asm</span> 是目标文件版本（含重定位，能看到全局地址如何从 <span style="font-family:var(--mono)">ds:0x0</span> 变成 <span style="font-family:var(--mono)">0x402000</span>）；<span style="font-family:var(--mono)">.s</span> 是 GCC 生成的汇编原文。打开 exe 还可以丢进 IDA / x64dbg 进一步单步。</div>
+
+    <details>
+      <summary>d1_vars.exe — 局部/全局变量完整反汇编</summary>
+      <div class="dbody">
+<pre class="code"><span class="ad">00401000</span> &lt;_add_global&gt;:
+  push   ebp
+  mov    ebp,esp
+  mov    edx,DWORD PTR ds:0x402000
+  mov    eax,DWORD PTR [ebp+0x8]
+  add    eax,edx
+  mov    ds:0x402000,eax
+  mov    eax,ds:0x402000
+  pop    ebp
+  ret
+
+<span class="ad">0040101a</span> &lt;_add_local&gt;:
+  push   ebp
+  mov    ebp,esp
+  sub    esp,0x4
+  mov    DWORD PTR [ebp-0x4],0x2a
+  mov    eax,DWORD PTR [ebp+0x8]
+  add    DWORD PTR [ebp-0x4],eax
+  mov    eax,DWORD PTR [ebp-0x4]
+  leave
+  ret
+
+<span class="ad">00401032</span> &lt;_main&gt;:
+  push   ebp
+  mov    ebp,esp
+  sub    esp,0xc
+  call   <span class="ad">401068</span> &lt;___main&gt;
+  mov    DWORD PTR [esp],0x5
+  call   <span class="ad">401000</span> &lt;_add_global&gt;
+  mov    DWORD PTR [ebp-0x4],eax
+  mov    DWORD PTR [esp],0x3
+  call   <span class="ad">40101a</span> &lt;_add_local&gt;
+  mov    DWORD PTR [ebp-0x8],eax
+  mov    edx,DWORD PTR [ebp-0x4]
+  mov    eax,DWORD PTR [ebp-0x8]
+  add    eax,edx
+  leave
+  ret</pre>
+      </div>
+    </details>
+
+    <details>
+      <summary>d2_array.exe — 数组完整反汇编</summary>
+      <div class="dbody">
+<pre class="code"><span class="ad">00401000</span> &lt;_sum_array&gt;:
+  push   ebp
+  mov    ebp,esp
+  sub    esp,0x18
+  mov    DWORD PTR [ebp-0x18],0xa
+  mov    DWORD PTR [ebp-0x14],0x14
+  mov    DWORD PTR [ebp-0x10],0x1e
+  mov    DWORD PTR [ebp-0xc],0x28
+  mov    DWORD PTR [ebp-0x4],0x0
+  mov    DWORD PTR [ebp-0x8],0x0
+  jmp    <span class="ad">401040</span>
+  mov    eax,DWORD PTR [ebp-0x8]
+  mov    eax,DWORD PTR [ebp+eax*4-0x18]
+  add    DWORD PTR [ebp-0x4],eax
+  add    DWORD PTR [ebp-0x8],0x1
+  cmp    DWORD PTR [ebp-0x8],0x3
+  jle    <span class="ad">401032</span>
+  mov    edx,DWORD PTR [ebp-0x4]
+  mov    eax,DWORD PTR [ebp+0x8]
+  add    eax,edx
+  leave
+  ret
+
+<span class="ad">00401050</span> &lt;_main&gt;:
+  push   ebp
+  mov    ebp,esp
+  sub    esp,0x4
+  call   <span class="ad">40106c</span> &lt;___main&gt;
+  mov    DWORD PTR [esp],0x1
+  call   <span class="ad">401000</span> &lt;_sum_array&gt;
+  leave
+  ret</pre>
+      </div>
+    </details>
+
+    <details>
+      <summary>d3_ptr.exe — 指针传参完整反汇编</summary>
+      <div class="dbody">
+<pre class="code"><span class="ad">00401000</span> &lt;_swap&gt;:
+  push   ebp
+  mov    ebp,esp
+  sub    esp,0x4
+  mov    eax,DWORD PTR [ebp+0x8]
+  mov    eax,DWORD PTR [eax]
+  mov    DWORD PTR [ebp-0x4],eax
+  mov    eax,DWORD PTR [ebp+0xc]
+  mov    edx,DWORD PTR [eax]
+  mov    eax,DWORD PTR [ebp+0x8]
+  mov    DWORD PTR [eax],edx
+  mov    eax,DWORD PTR [ebp+0xc]
+  mov    edx,DWORD PTR [ebp-0x4]
+  mov    DWORD PTR [eax],edx
+  nop
+  leave
+  ret
+
+<span class="ad">00401023</span> &lt;_main&gt;:
+  push   ebp
+  mov    ebp,esp
+  sub    esp,0x14
+  call   <span class="ad">401064</span> &lt;___main&gt;
+  mov    DWORD PTR [ebp-0x8],0x3
+  mov    DWORD PTR [ebp-0xc],0x5
+  lea    eax,[ebp-0x8]
+  mov    DWORD PTR [ebp-0x4],eax
+  lea    eax,[ebp-0xc]
+  mov    DWORD PTR [esp+0x4],eax
+  lea    eax,[ebp-0x8]
+  mov    DWORD PTR [esp],eax
+  call   <span class="ad">401000</span> &lt;_swap&gt;
+  add    DWORD PTR [ebp-0x4],0x4
+  mov    edx,DWORD PTR [ebp-0x8]
+  mov    eax,DWORD PTR [ebp-0xc]
+  sub    edx,eax
+  mov    eax,edx
+  leave
+  ret</pre>
+      </div>
+    </details>
+  </section>
+
+  <!-- ===================== 07 自测 ===================== -->
+  <section id="quiz">
+    <div class="sec-head">
+      <span class="sec-num">07</span>
+      <span class="sec-title">自测：看到汇编能还原吗</span>
+      <span class="sec-sub">先自己想，再点开答案</span>
+    </div>
+    <div class="card">
+      <div class="quiz">
+        <div class="q"><b>Q1</b> 一段代码里出现 <span class="qa"><code>mov eax, ds:0x403010</code></span> 且全程没有对 ebp 的访问。它大概率是什么？</div>
+        <details><summary>答案</summary><div class="dbody">全局（或静态）变量。固定绝对地址 + 无栈帧 = 镜像数据段里的对象，C 里对应文件作用域变量。</div></details>
+        <div class="q"><b>Q2</b> 看到 <span class="qa"><code>mov eax,[ebp+0x8]</code> → <code>mov eax,[eax]</code></span> 连续两条指令，还原成 C 是什么？</div>
+        <details><summary>答案</summary><div class="dbody">解引用：<code>int t = *a;</code>。第一条从栈取指针值（地址），第二条按地址取值。值传递的代码不会出现这种双层访存。</div></details>
+        <div class="q"><b>Q3</b> 循环体里出现 <span class="qa"><code>mov eax,[ebp+ecx*4-0x20]</code></span>，ecx 从 0 递增。这是什么数据结构？</div>
+        <details><summary>答案</summary><div class="dbody">int 数组遍历。<code>×4</code> 是元素大小（sizeof(int)），<code>-0x20</code> 是数组首元素相对 ebp 的偏移，ecx 是下标 i。等价于 <code>arr[i]</code>。</div></details>
+        <div class="q"><b>Q4</b> 函数 prologue 是 <span class="qa"><code>sub esp, 0x18</code></span>，函数里访问了 <code>[ebp-0x18]</code> 到 <code>[ebp-0xc]</code> 四个 4 字节槽位。它可能是？</div>
+        <details><summary>答案</summary><div class="dbody">一个 <code>int arr[4]</code>（16 字节连续槽位），也可能是 4 个相邻的局部 int。区分方法：看访问时是"固定偏移逐个访问"（局部变量）还是"带变址 reg*4"（数组下标）。</div></details>
+        <div class="q"><b>Q5</b> <span class="qa"><code>add DWORD PTR [ebp-0x4], 0x4</code></span>，对应 C 里的 <code>p = p + 1</code>。p 是什么类型？</div>
+        <details><summary>答案</summary><div class="dbody"><code>int *</code>。指针 +1 在机器码里加的是元素大小：+4 = int*，+1 = char*，+2 = short*，+8 = double* 或 long long*。反向可据此推断指针指向类型。</div></details>
+      </div>
+    </div>
+  </section>
+
+  <div class="footer">
+    <span>环境：MinGW GCC 16.2.0 · <span style="font-family:var(--mono)">-m32 -O0</span> · i386 PE（无 CRT，入口桩 <span style="font-family:var(--mono)">crt_stub.c</span>）</span>
+    <span>运行验证：64 位正常版退出码 150 / 101 / 2，与源码逻辑一致</span>
+  </div>
+
+</div>
+</body>
+</html>
